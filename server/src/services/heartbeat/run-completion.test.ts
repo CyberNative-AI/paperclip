@@ -224,6 +224,18 @@ describe.skipIf(!support.supported)("heartbeat run completion boundary", () => {
       expect(f.deps.finalizeAgentStatus).toHaveBeenCalledWith(f.agent.id, "succeeded", null, expect.any(Object));
     });
 
+    it("keeps the result when the lease-loss warning cannot be recorded", async () => {
+      const f = await lapsedLease();
+      const appendRunEvent = vi.fn(f.deps.appendRunEvent).mockRejectedValueOnce(new Error("event store unavailable"));
+      const completion = createHeartbeatRunCompletion(db, { ...f.deps, appendRunEvent });
+      loseLease(f.controller);
+      await expect(completion.completeRun(f.input)).resolves.toBeUndefined();
+      expect(appendRunEvent).toHaveBeenNthCalledWith(1, expect.anything(), expect.objectContaining({ level: "warn" }));
+      expect(await read(f.run.id)).toMatchObject({ status: "succeeded", errorCode: null, sessionIdAfter: "provider-session",
+        resultJson: { controllerLeaseLoss: { cause: "renewal_deadline" } } });
+      expect((await f.deps.getTaskSession(f.agent.companyId, f.agent.id, f.agent.adapterType, "completion-task"))?.sessionDisplayId).toBe("provider-session");
+    });
+
     it("stays cancelled when another controller revoked the lease", async () => {
       const f = await lapsedLease({ controllerBootId: randomUUID() });
       loseLease(f.controller);

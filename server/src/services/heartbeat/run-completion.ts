@@ -396,13 +396,20 @@ export function createHeartbeatRunCompletion(db: Db, dependencies: HeartbeatRunC
       adapterResult.signal
     ) return false;
     if (!(await reclaimLapsedLegacyControllerLease(db, run))) return false;
-    await appendRunEvent(run, {
-      eventType: "lifecycle",
-      stream: "system",
-      level: "warn",
-      message: "Controller lease lapsed during execution and was reclaimed; the adapter's clean result is kept",
-      payload: controllerLeaseLossEvidence(signal.reason),
-    });
+    try {
+      await appendRunEvent(run, {
+        eventType: "lifecycle",
+        stream: "system",
+        level: "warn",
+        message: "Controller lease lapsed during execution and was reclaimed; the adapter's clean result is kept",
+        payload: controllerLeaseLossEvidence(signal.reason),
+      });
+    } catch (error) {
+      logger.warn(
+        { error, runId: run.id },
+        "controller lease loss event failed without affecting run outcome",
+      );
+    }
     return true;
   }
 
