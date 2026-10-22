@@ -69,7 +69,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ def
 const DashboardLive = lazy(() => import("./pages/DashboardLive").then((module) => ({ default: module.DashboardLive })));
 const Timeline = lazy(() => import("./pages/Timeline").then((module) => ({ default: module.Timeline })));
 const Companies = lazy(() => import("./pages/Companies").then((module) => ({ default: module.Companies })));
-const AgentDetail = lazy(() => import("./pages/AgentDetail").then((module) => ({ default: module.AgentDetail })));
+const AgentDetail = lazy(() => import("./pages/AgentDetailPage").then((module) => ({ default: module.AgentDetailPage })));
 const Projects = lazy(() => import("./pages/Projects").then((module) => ({ default: module.Projects })));
 const ProjectDetail = lazy(() => import("./pages/ProjectDetail").then((module) => ({ default: module.ProjectDetail })));
 const ProjectWorkspaceDetail = lazy(() => import("./pages/ProjectWorkspaceDetail").then((module) => ({ default: module.ProjectWorkspaceDetail })));
@@ -260,7 +260,7 @@ function boardRoutes(streamlinedUiEnabled: boolean, combinedInboxTasksEnabled: b
       <Route path="company/settings/:settingsRoutePath/*" element={<CompanySettingsPluginPage />} />
       <Route path="skills/sources" element={<SkillSources />} />
       <Route path="skills/sources/:sourceId" element={<SkillSources />} />
-      <Route path="skills/studio" element={<SkillStudio />} />
+      <Route path="skills/studio" element={streamlinedUiEnabled ? <CompanySkills collectionView="authored" /> : <SkillStudio />} />
       <Route path="skills/studio/new" element={<SkillStudio />} />
       <Route path="skills/studio/:skillId" element={<SkillStudio />} />
       <Route path="skills/:skillId/studio" element={<LegacySkillStudioRedirect />} />
