@@ -234,8 +234,14 @@ describe.skipIf(!support.supported)("heartbeat run completion boundary", () => {
   });
 
   describe("a clean adapter result after the controller lease lapsed (#14840)", () => {
-    const lapsedLease = (patch: Partial<typeof heartbeatRuns.$inferInsert> = {}) => fixture({
-      controllerBootId: legacyControllerBootId, controllerLeaseExpiresAt: new Date(Date.now() - 30_000), ...patch });
+    const lapsedLease = async (patch: Partial<typeof heartbeatRuns.$inferInsert> = {}) => {
+      const f = await fixture({ controllerBootId: legacyControllerBootId, controllerLeaseExpiresAt: new Date(Date.now() - 30_000), ...patch });
+      const appendRunEvent = vi.fn(f.deps.appendRunEvent);
+      return { ...f, appendRunEvent, completion: createHeartbeatRunCompletion(db, { ...f.deps, appendRunEvent }) };
+    };
+    const keptWarning = expect.objectContaining({ level: "warn", message: expect.stringContaining("clean result is kept") });
+    const leaseLossCancellation = { cancellation: { source: "controller_lease", reason: "Legacy controller lease lost (renewal_deadline)" },
+      controllerLeaseLoss: { cause: "renewal_deadline", renewalCount: 12 } };
     const loseLease = (controller: AbortController) => controller.abort(new LegacyControllerLeaseLostError("renewal_deadline",
       { sinceRenewalMs: 75_000, renewalPendingMs: 72_000, deadlineLateMs: 3, renewalCount: 12 }));
 
@@ -247,7 +253,16 @@ describe.skipIf(!support.supported)("heartbeat run completion boundary", () => {
       expect(run).toMatchObject({ status: "succeeded", errorCode: null, sessionIdAfter: "provider-session",
         resultJson: { finalResponse: "Completed the work.", controllerLeaseLoss: { cause: "renewal_deadline", renewalCount: 12 } } });
       expect(run.resultJson).not.toHaveProperty("cancellation");
+      expect(f.appendRunEvent).toHaveBeenCalledWith(expect.anything(), keptWarning);
       expect(f.deps.finalizeAgentStatus).toHaveBeenCalledWith(f.agent.id, "succeeded", null, expect.any(Object));
+    });
+
+    it("keeps the result when the adapter reports no exit code", async () => {
+      const f = await lapsedLease();
+      f.input.adapterResult.exitCode = null;
+      loseLease(f.controller);
+      await f.completion.completeRun(f.input);
+      expect(await read(f.run.id)).toMatchObject({ status: "succeeded", errorCode: null, resultJson: { controllerLeaseLoss: { cause: "renewal_deadline" } } });
     });
 
     it("keeps the result when the lease-loss warning cannot be recorded", async () => {
@@ -282,20 +297,33 @@ describe.skipIf(!support.supported)("heartbeat run completion boundary", () => {
       f.deps.processRunCancellationSettlements.set(f.run.id, { settled: Promise.resolve(), failed: false });
       loseLease(f.controller);
       await f.completion.completeRun(f.input);
-      expect((await read(f.run.id)).status).toBe("cancelled");
+      expect(await read(f.run.id)).toMatchObject({ status: "cancelled", resultJson: leaseLossCancellation });
+      expect(f.appendRunEvent).not.toHaveBeenCalledWith(expect.anything(), keptWarning);
+    });
+
+    it("stays cancelled when the adapter returned a native finalization", async () => {
+      const f = await lapsedLease();
+      f.input.adapterResult.nativeFinalization = { schema: "paperclip.native-finalization.v1", runtimeMode: "native", runId: f.run.id, companyId: f.run.companyId, issueId: "unused", result: {}, terminal: { schema: "paperclip.prp.terminal.v1", turnTerminalState: "completed", runTerminalState: "succeeded", reportedWorkDisposition: "done" }, turnId: null, sourceInstanceId: "test", normalizedSessionId: "native-session", providerSessionId: null, driverKind: "test", driverVersion: "1", nativeEventCount: 1, highestContiguousSourceSeq: 1, workspaceFinalizeStatus: "succeeded" };
+      loseLease(f.controller);
+      await f.completion.completeRun(f.input);
+      expect(await read(f.run.id)).toMatchObject({ status: "cancelled", resultJson: leaseLossCancellation });
+      expect(f.appendRunEvent).not.toHaveBeenCalledWith(expect.anything(), keptWarning);
     });
 
     it.each([
       { exitCode: 1 },
+      { errorMessage: "Adapter reported an error" },
       { exitCode: null, errorCode: "cancelled", errorMessage: "Execution was cancelled" },
       { signal: "SIGTERM" },
       { timedOut: true },
+      { resultJson: { status: "cancelled" } },
     ])("stays cancelled when the adapter did not exit cleanly (%o)", async (result) => {
       const f = await lapsedLease();
       Object.assign(f.input.adapterResult, result);
       loseLease(f.controller);
       await f.completion.completeRun(f.input);
-      expect(await read(f.run.id)).toMatchObject({ status: "cancelled", resultJson: { cancellation: { source: "controller_lease" } } });
+      expect(await read(f.run.id)).toMatchObject({ status: "cancelled", resultJson: leaseLossCancellation });
+      expect(f.appendRunEvent).not.toHaveBeenCalledWith(expect.anything(), keptWarning);
     });
 
     it("stays cancelled for any other abort reason", async () => {
@@ -303,6 +331,7 @@ describe.skipIf(!support.supported)("heartbeat run completion boundary", () => {
       f.controller.abort(new Error("Run stopped before provider startup"));
       await f.completion.completeRun(f.input);
       expect((await read(f.run.id)).status).toBe("cancelled");
+      expect(f.appendRunEvent).not.toHaveBeenCalledWith(expect.anything(), keptWarning);
     });
   });
 
