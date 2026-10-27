@@ -879,6 +879,9 @@ describe("agent instructions bundle routes", () => {
     expect(mockAgentInstructionsService.writeFile).toHaveBeenCalledTimes(1);
     expect(mockAgentInstructionsService.updateBundle).toHaveBeenCalledTimes(1);
     expect(mockAgentService.update).toHaveBeenCalledTimes(2);
+    expect(mockSecretService.normalizeAdapterConfigForPersistence.mock.calls.map(
+      (call) => ((call as unknown[])[2] as { validateOnly?: boolean } | undefined)?.validateOnly === true,
+    )).toEqual([true, false, true, false]);
     for (const [id, patchArg] of mockAgentService.update.mock.calls) {
       expect(id).toBe("11111111-1111-4111-8111-111111111111");
       expect(patchArg).toEqual({

@@ -803,7 +803,7 @@ export function agentRoutes(
     await secretsSvc.normalizeAdapterConfigForPersistence(
       agent.companyId,
       asRecord(agent.adapterConfig) ?? {},
-      { strictMode: strictSecretsMode, adapterType: agent.adapterType },
+      { strictMode: strictSecretsMode, adapterType: agent.adapterType, validateOnly: true },
     );
   }
 
